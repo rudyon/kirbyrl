@@ -135,7 +135,7 @@ class Buffer():
         return len(self.transitions)
             
 
-pyboy = PyBoy("kirby.gb", sound_emulated=False, window="null")
+pyboy = PyBoy("kirby.gb", sound_emulated=False, window="SDL2")
 pyboy.set_emulation_speed(0)
 assert pyboy.cartridge_title == "KIRBY DREAM LAN"
 
@@ -181,7 +181,7 @@ buffer = Buffer()
 step = 0
 
 if os.path.isfile("checkpoint.pt"):
-    checkpoint = torch.load("checkpoint.pt")
+    checkpoint = torch.load("checkpoint.pt", map_location=torch.device(device))
     model.load_state_dict(checkpoint['model'])
     target_model.load_state_dict(checkpoint['target_model'])
     optimizer.load_state_dict(checkpoint['optimizer'])
