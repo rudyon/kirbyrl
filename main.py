@@ -8,13 +8,12 @@ from PIL import Image
 from collections import deque
 import random
 import os
-import matplotlib.pyplot as plt
 
 def get_frame():
     img = pyboy.screen.image.convert('L')
     img = img.resize((84, 84))
-    tensor = torch.tensor(np.array(img), dtype=torch.float32) / 255.0
-    return tensor.unsqueeze(0)
+    tensor = torch.tensor(np.array(img), dtype=torch.uint8)
+    return tensor
 
 class Enviroment():
     def __init__(self):
@@ -38,7 +37,7 @@ class Enviroment():
             pyboy.tick(4)
         new_frame = get_frame()
         self.frame_stack.append(new_frame)
-        state = torch.cat(list(self.frame_stack), dim=0)
+        state = torch.stack(list(self.frame_stack), dim=0).float() / 255.0
         curr_x = pyboy.memory[0xD053]
         curr_score = pyboy.memory[0xD08B]
         delta = curr_x - prev_x
@@ -78,7 +77,7 @@ class Enviroment():
         obs = get_frame()
         for _ in range(4):
             self.frame_stack.append(obs)
-        return torch.cat(list(self.frame_stack), dim=0)
+        return torch.stack(list(self.frame_stack), dim=0).float() / 255.0
 
 class NeuralNetwork(nn.Module):
     def __init__(self, num_actions):
@@ -101,20 +100,42 @@ class NeuralNetwork(nn.Module):
         return logits
 
 class Buffer():
-    def __init__(self):
-        self.buffer = deque(maxlen=10000)
+    def __init__(self, capacity=100000):
+        self.capacity = capacity
+        self.frames = deque(maxlen=capacity + 4)
+        self.transitions = deque(maxlen=capacity)
+        self.frame_count = 0
 
-    def push(self, state, action, reward, next_state, done):
-        self.buffer.append((state, action, reward, next_state, done))
+    def push(self, frame, action, reward, done):
+        self.frames.append(frame)
+        self.transitions.append((self.frame_count, action, reward, done))
+        self.frame_count += 1
+
+    def _get_stack(self, frame_idx):
+        start = self.frame_count - len(self.frames)
+        local_idx = frame_idx - start
+        local_idx = max(0, min(local_idx, len(self.frames) - 1))
+        stack = [self.frames[max(0, local_idx - 3 + i)] for i in range(4)]
+        return torch.stack(stack).float() / 255.0
 
     def sample(self, size):
-        return random.sample(list(self.buffer), size)
-    
+        # reconstruct 4-frame stacks from indices on the fly
+        valid = [t for t in self.transitions if t[0] >= 3]
+        batch = random.sample(valid, size)
+        states, acts, rewards, next_states, dones = [], [], [], [], []
+        for frame_idx, action, reward, done in batch:
+            states.append(self._get_stack(frame_idx))
+            next_states.append(self._get_stack(frame_idx + 1))
+            acts.append(action)
+            rewards.append(reward)
+            dones.append(done)
+        return states, acts, rewards, next_states, dones
+
     def __len__(self):
-        return len(self.buffer)
+        return len(self.transitions)
             
 
-pyboy = PyBoy("kirby.gb", sound_emulated=False)
+pyboy = PyBoy("kirby.gb", sound_emulated=False, window="null")
 pyboy.set_emulation_speed(0)
 assert pyboy.cartridge_title == "KIRBY DREAM LAN"
 
@@ -139,11 +160,14 @@ pyboy.set_emulation_speed(0)
 env = Enviroment()
 state = env.reset()
 model = NeuralNetwork(num_actions=len(actions))
+target_model = NeuralNetwork(num_actions=len(actions))
+target_model.load_state_dict(model.state_dict())
+target_model.eval()
 
 batch_size = 32
 
 epsilon = 1.0
-epsilon_decay = 0.9999
+epsilon_decay = 0.999
 epsilon_min = 0.05
 optimizer = torch.optim.Adam(model.parameters(), lr=0.0001)
 buffer = Buffer()
@@ -152,6 +176,7 @@ step = 0
 if os.path.isfile("checkpoint.pt"):
     checkpoint = torch.load("checkpoint.pt")
     model.load_state_dict(checkpoint['model'])
+    target_model.load_state_dict(checkpoint['target_model'])
     optimizer.load_state_dict(checkpoint['optimizer'])
     step = checkpoint['step']
     epsilon = checkpoint['epsilon']
@@ -179,7 +204,7 @@ while True:
     episode_steps += 1
 
     # store experience in buffer and update the state
-    buffer.push(state, action, reward, next_state, done)
+    buffer.push(get_frame(), action, reward, done)
     state = next_state
 
     if done:
@@ -198,8 +223,7 @@ while True:
         step += 1
         continue
 
-    batch = buffer.sample(batch_size)
-    states, acts, rewards, next_states, dones = zip(*batch)
+    states, acts, rewards, next_states, dones = buffer.sample(batch_size)
 
     states = torch.stack(states)
     next_states = torch.stack(next_states)
@@ -210,7 +234,7 @@ while True:
     predicted_q = model(states).gather(1, acts.unsqueeze(1)).squeeze(1) 
 
     with torch.no_grad():
-        next_q = model(next_states).max(1).values
+        next_q = target_model(next_states).max(1).values
         target_q = rewards + 0.99 * next_q * (1 - dones)
 
     loss = F.mse_loss(predicted_q, target_q)
@@ -219,9 +243,13 @@ while True:
     torch.nn.utils.clip_grad_norm_(model.parameters(), 10)
     optimizer.step()
 
+    if step % 1000 == 0:
+        target_model.load_state_dict(model.state_dict())
+
     if step % 5000 == 0:
         torch.save({
             'model': model.state_dict(),
+            'target_model': target_model.state_dict(),
             'optimizer': optimizer.state_dict(),
             'step': step,
             'epsilon': epsilon,
