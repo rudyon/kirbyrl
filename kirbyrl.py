@@ -195,7 +195,7 @@ if args.model != None:
         step = loaded_model['step']
         epsilon = loaded_model['epsilon']
         epsilon = max(epsilon, 0.3)
-        print(f"[INFO] Pretrained model loaded . Epsilon {epsilon}, step {step}.")
+        print(f"[INFO] Pretrained model loaded. Epsilon {epsilon}, step {step}.")
     else:
         print("[ERROR] Pretrained model not found in location!")
 
