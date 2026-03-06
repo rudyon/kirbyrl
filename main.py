@@ -161,12 +161,13 @@ if torch.cuda.is_available():
     print("(˶ˆᗜˆ˵) found GPU, will run on GPU")
 else:
     print("o(╥﹏╥)o no GPU found, will run on CPU")
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 pyboy.set_emulation_speed(0)
 env = Enviroment()
 state = env.reset()
-model = NeuralNetwork(num_actions=len(actions))
-target_model = NeuralNetwork(num_actions=len(actions))
+model = NeuralNetwork(num_actions=len(actions)).to(device)
+target_model = NeuralNetwork(num_actions=len(actions)).to(device)
 target_model.load_state_dict(model.state_dict())
 target_model.eval()
 
@@ -200,7 +201,7 @@ while True:
         action = random.randint(0, len(actions)-1)
     else:
         with torch.no_grad():
-            q_values = model(state.unsqueeze(0))
+            q_values = model(state.unsqueeze(0).to(device))
             action = torch.argmax(q_values).item()
 
     next_state, reward, done = env.step(actions[action])
@@ -218,7 +219,7 @@ while True:
         print(f"episode {episode} | steps {episode_steps} | reward {episode_reward:.2f} | epsilon {epsilon:.3f}")
         episode_reward = 0
         episode_steps = 0
-        state = env.reset()
+        state = env.reset().to(device)
 
     epsilon = max(epsilon_min, epsilon * epsilon_decay)
 
@@ -231,11 +232,11 @@ while True:
 
     states, acts, rewards, next_states, dones = buffer.sample(batch_size)
 
-    states = torch.stack(states)
-    next_states = torch.stack(next_states)
-    acts = torch.tensor(acts)
-    rewards = torch.tensor(rewards, dtype=torch.float32)
-    dones = torch.tensor(dones, dtype=torch.float32)
+    states = torch.stack(states).to(device)
+    next_states = torch.stack(next_states).to(device)
+    acts = torch.tensor(acts).to(device)
+    rewards = torch.tensor(rewards, dtype=torch.float32).to(device)
+    dones = torch.tensor(dones, dtype=torch.float32).to(device)
     
     predicted_q = model(states).gather(1, acts.unsqueeze(1)).squeeze(1) 
 
