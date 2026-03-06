@@ -1,3 +1,11 @@
+import argparse
+
+parser = argparse.ArgumentParser(description="An RL agent that plays Kirby's Dream Land")
+parser.add_argument("-w", "--window", type=str, default="SDL2", choices=["SDL2", "OpenGL", "GLFW", "null"])
+parser.add_argument("-m", "--model", type=str, help="Model to load.")
+
+args = parser.parse_args()
+
 from pyboy import *
 from pyboy.utils import WindowEvent
 import torch
@@ -133,9 +141,8 @@ class Buffer():
 
     def __len__(self):
         return len(self.transitions)
-            
 
-pyboy = PyBoy("kirby.gb", sound_emulated=False, window="SDL2")
+pyboy = PyBoy("kirby.gb", sound_emulated=False, window=args.window)
 pyboy.set_emulation_speed(0)
 assert pyboy.cartridge_title == "KIRBY DREAM LAN"
 
@@ -157,10 +164,9 @@ with open("save.state", 'wb') as s:
     pyboy.save_state(s)
 
 if torch.cuda.is_available():
-    print(f"OwO what's this? {torch.cuda.get_device_name(0)}")
-    print("(˶ˆᗜˆ˵) found GPU, will run on GPU")
+    print(f"[INFO] FOUND GPU: {torch.cuda.get_device_name(0)}!")
 else:
-    print("o(╥﹏╥)o no GPU found, will run on CPU")
+    print("[WARNING] NO GPU FOUND. WILL RUN ON CPU!")
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 pyboy.set_emulation_speed(0)
@@ -180,15 +186,18 @@ optimizer = torch.optim.Adam(model.parameters(), lr=0.0001)
 buffer = Buffer()
 step = 0
 
-if os.path.isfile("checkpoint.pt"):
-    checkpoint = torch.load("checkpoint.pt", map_location=torch.device(device))
-    model.load_state_dict(checkpoint['model'])
-    target_model.load_state_dict(checkpoint['target_model'])
-    optimizer.load_state_dict(checkpoint['optimizer'])
-    step = checkpoint['step']
-    epsilon = checkpoint['epsilon']
-    epsilon = max(epsilon, 0.3)
-    print(f"loaded from checkpoint | epsilon {epsilon} | step {step}")
+if args.model != None:
+    if os.path.isfile(args.model):
+        loaded_model = torch.load(args.model, map_location=torch.device(device))
+        model.load_state_dict(loaded_model['model'])
+        target_model.load_state_dict(loaded_model['target_model'])
+        optimizer.load_state_dict(loaded_model['optimizer'])
+        step = loaded_model['step']
+        epsilon = loaded_model['epsilon']
+        epsilon = max(epsilon, 0.3)
+        print(f"[INFO] Pretrained model loaded . Epsilon {epsilon}, step {step}.")
+    else:
+        print("[ERROR] Pretrained model not found in location!")
 
 # episode stats
 episode_reward = 0
@@ -216,7 +225,7 @@ while True:
 
     if done:
         episode += 1
-        print(f"episode {episode} | steps {episode_steps} | reward {episode_reward:.2f} | epsilon {epsilon:.3f}")
+        print(f"[INFO] Episode {episode} | Steps {episode_steps} | Reward {episode_reward:.2f} | Epsilon {epsilon:.3f}")
         episode_reward = 0
         episode_steps = 0
         state = env.reset().to(device)
@@ -226,7 +235,7 @@ while True:
     # check if buffer has enough to train
     if len(buffer) < 1000:
         if step % 100 == 0:
-            print(f"filling buffer {len(buffer)}/1000")
+            print(f"[INFO] Filling buffer {len(buffer)}/1000.")
         step += 1
         continue
 
@@ -260,10 +269,11 @@ while True:
             'optimizer': optimizer.state_dict(),
             'step': step,
             'epsilon': epsilon,
-        }, "checkpoint.pt")
-        print(f"saved checkpoint at {step}")
+        }, "model.pt")
+        print(f"[INFO] Saved model at step {step} to ./model.pt.")
 
     if step % 100 == 0:
-        print(f"step {step} | epsilon {epsilon:.3f} | loss {loss.item():.4f} | buffer {len(buffer)}")
+        print(f"[INFO] Step {step} | Epsilon {epsilon:.3f} | Loss {loss.item():.4f} | Buffer {len(buffer)}")
+    
 
     step += 1
