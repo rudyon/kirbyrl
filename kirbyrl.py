@@ -76,6 +76,7 @@ class Enviroment():
         if self.stuck_count > 5000:
             done = True
 
+        reward = max(-1, min(1, reward))
         return state, reward, done
     
     def reset(self):
