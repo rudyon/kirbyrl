@@ -156,6 +156,12 @@ pyboy.tick(500)
 with open("save.state", 'wb') as s:
     pyboy.save_state(s)
 
+if torch.cuda.is_available():
+    print(f"OwO what's this? {torch.cuda.get_device_name(0)}")
+    print("(˶ˆᗜˆ˵) found GPU, will run on GPU")
+else:
+    print("o(╥﹏╥)o no GPU found, will on CPU")
+
 pyboy.set_emulation_speed(0)
 env = Enviroment()
 state = env.reset()
