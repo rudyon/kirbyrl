@@ -181,7 +181,7 @@ target_model.eval()
 batch_size = 32
 
 epsilon = 1.0
-epsilon_decay = 0.999
+epsilon_decay = 0.9999
 epsilon_min = 0.05
 optimizer = torch.optim.Adam(model.parameters(), lr=0.0001)
 buffer = Buffer()
