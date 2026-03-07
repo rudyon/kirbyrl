@@ -293,7 +293,7 @@ while True:
             'step': step,
             'epsilon': epsilon,
         }, "model.pt")
-        record_episode(f"/content/drive/MyDrive/kirbyrl/episode_{step}.gif")
+        record_episode(f"episode_{step}.gif")
         print(f"[INFO] Saved model at step {step} to ./model.pt.")
 
     if step % 100 == 0:
