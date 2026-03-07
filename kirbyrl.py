@@ -16,6 +16,7 @@ from PIL import Image
 from collections import deque
 import random
 import os
+import imageio
 
 def get_frame():
     img = pyboy.screen.image.convert('L')
@@ -73,7 +74,7 @@ class Enviroment():
         
         if self.stuck_count > 30:
             reward -= 1
-        if self.stuck_count > 5000:
+        if self.stuck_count > 3000:
             done = True
 
         reward = max(-10, min(10, reward))
@@ -142,6 +143,27 @@ class Buffer():
 
     def __len__(self):
         return len(self.transitions)
+
+def record_episode(filename="episode.gif"):
+    frames = []
+    state = env.reset()
+    done = False
+    steps = 0
+    
+    while not done and steps < 3000:
+        # always use best action, no exploration
+        with torch.no_grad():
+            q_values = model(state.unsqueeze(0).to(device))
+            action = torch.argmax(q_values).item()
+        
+        # capture raw RGB frame before stepping
+        frames.append(np.array(pyboy.screen.image))
+        
+        state, reward, done = env.step(actions[action])
+        steps += 1
+    
+    imageio.mimsave(filename, frames, fps=30)
+    print(f"[INFO] Saved gif to {filename}.")
 
 pyboy = PyBoy("kirby.gb", sound_emulated=False, window=args.window)
 pyboy.set_emulation_speed(0)
@@ -271,6 +293,7 @@ while True:
             'step': step,
             'epsilon': epsilon,
         }, "model.pt")
+        record_episode(f"/content/drive/MyDrive/kirbyrl/episode_{step}.gif")
         print(f"[INFO] Saved model at step {step} to ./model.pt.")
 
     if step % 100 == 0:
