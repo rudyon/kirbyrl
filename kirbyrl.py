@@ -5,7 +5,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
-from PIL import Image
 from collections import deque
 import random
 import os
